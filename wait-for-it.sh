@@ -150,6 +150,7 @@ if [[ hLen -eq 1 ]]; then
     fi
 else
     #multiple values: split out to be processed
+    RESULT=0 #assume success until failure
     for i in "${!HOSTS[@]}"; do
         HOST=${HOSTS[$i]}
         PORT=${PORTS[$i]}
@@ -158,7 +159,7 @@ else
 
     for job in `jobs -p`
     do
-        wait $job || let "RESULT=1"
+        wait $job || let "RESULT=124"
     done
 fi
 
