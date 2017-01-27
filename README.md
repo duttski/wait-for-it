@@ -1,4 +1,4 @@
-# HELP NEEDED
+# Wait for them
 
 Originally forked from https://github.com/vishnubob/wait-for-it. My needs were slightly different and required waiting for many of these to complete. At the time the different input methods for host/port were removed as they seemed superfluous -- a regression for some, this is why no PR was made to the original repo.
 
