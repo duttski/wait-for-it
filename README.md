@@ -1,6 +1,6 @@
 # HELP NEEDED
 
-Hi there!  I wrote `wait-for-it` in order to help me orchestrate containers I operate at my day job.  I thought it was a neat little script, so I published it.  I assumed I would be its only user, but that's not what happened!  `wait-for-it` has received more stars then all of my other public repositories put together.  I had no idea this tool would solicit such an audience, and I was equally unprepared to carve out the time required to address my user's issues and patches.  I would like to solicit a volunteer from the community who would be willing to be a co-maintainer of this repository.  If this is something you might be interested in, please email me at `waitforit@polymerase.org`.  Thanks!
+Originally forked from https://github.com/vishnubob/wait-for-it. My needs were slightly different and required waiting for many of these to complete. At the time the different input methods for host/port were removed as they seemed superfluous -- a regression for some, this is why no PR was made to the original repo.
 
 ## wait-for-it
 
