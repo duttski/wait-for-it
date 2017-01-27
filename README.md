@@ -9,10 +9,7 @@ Hi there!  I wrote `wait-for-it` in order to help me orchestrate containers I op
 ## Usage
 
 ```
-wait-for-it.sh host:port [-s] [-t timeout] [-- command args]
--h HOST | --host=HOST       Host or IP under test
--p PORT | --port=PORT       TCP port under test
-                            Alternatively, you specify the host and port as host:port
+wait-for-it.sh host:port [host:port...] [-s] [-t timeout] [-- command args]
 -s | --strict               Only execute subcommand if the test succeeds
 -q | --quiet                Don't output any status messages
 -t TIMEOUT | --timeout=TIMEOUT
@@ -64,6 +61,21 @@ $ echo $?
 124
 ```
 
-## Thanks
+If you wish to wait for multiple tcp requests, all must succeed:
 
-I wrote this script for my employer, [Ginkgo Bioworks](http://www.ginkgobioworks.com/), who was kind enough to let me release it as an open source tool.  We are always looking to [hire](https://jobs.lever.co/ginkgobioworks) talented folks who are interested in working in the field of synthetic biology.
+```
+$ ./wait-for-it.sh www.google.com:80 www.example.com:81
+wait-for-it.sh: waiting 15 seconds for www.google.com:80
+wait-for-it.sh: waiting 15 seconds for www.example.com:81
+wait-for-it.sh: www.google.com:80 is available after 0 seconds
+wait-for-it.sh: timeout occurred after waiting 15 seconds for www.example.com:81
+$ echo $?
+124
+$ ./wait-for-it.sh www.google.com:80 www.example.com:80
+wait-for-it.sh: waiting 15 seconds for www.example.com:80
+wait-for-it.sh: waiting 15 seconds for www.google.com:80
+wait-for-it.sh: www.google.com:80 is available after 0 seconds
+wait-for-it.sh: www.example.com:80 is available after 0 seconds
+$ echo $?
+0
+```

@@ -9,12 +9,9 @@ usage()
 {
     cat << USAGE >&2
 Usage:
-    $cmdname host:port [-s] [-t timeout] [-- command args]
-    -h HOST | --host=HOST       Host or IP under test
-    -p PORT | --port=PORT       TCP port under test
-                                Alternatively, you specify the host and port as host:port
+    $cmdname host:port [host:port...] [-s] [-t timeout] [-- command args]
     -s | --strict               Only execute subcommand if the test succeeds
-    -q | --quiet                Don't output any status messages
+    -q | --quiet                Don\'t output any status messages
     -t TIMEOUT | --timeout=TIMEOUT
                                 Timeout in seconds, zero for no timeout
     -- COMMAND ARGS             Execute command with args after the test finishes
@@ -48,9 +45,9 @@ wait_for_wrapper()
 {
     # In order to support SIGINT during timeout: http://unix.stackexchange.com/a/57692
     if [[ $QUIET -eq 1 ]]; then
-        timeout $TIMEOUT $0 --quiet --child --host=$HOST --port=$PORT --timeout=$TIMEOUT &
+        timeout $TIMEOUT $0 $HOST:$PORT --quiet --child --timeout=$TIMEOUT &
     else
-        timeout $TIMEOUT $0 --child --host=$HOST --port=$PORT --timeout=$TIMEOUT &
+        timeout $TIMEOUT $0 $HOST:$PORT --child --timeout=$TIMEOUT &
     fi
     PID=$!
     trap "kill -INT -$PID" INT
@@ -62,14 +59,19 @@ wait_for_wrapper()
     return $RESULT
 }
 
+declare -a HOSTS
+declare -a PORTS
+I=0
+
 # process arguments
 while [[ $# -gt 0 ]]
 do
     case "$1" in
         *:* )
         hostport=(${1//:/ })
-        HOST=${hostport[0]}
-        PORT=${hostport[1]}
+        I=$((I + 1))
+        HOSTS[I]=${hostport[0]}
+        PORTS[I]=${hostport[1]}
         shift 1
         ;;
         --child)
@@ -78,36 +80,21 @@ do
         ;;
         -q | --quiet)
         QUIET=1
+        PARAMS="$PARAMS --quiet"
         shift 1
         ;;
         -s | --strict)
         STRICT=1
         shift 1
         ;;
-        -h)
-        HOST="$2"
-        if [[ $HOST == "" ]]; then break; fi
-        shift 2
-        ;;
-        --host=*)
-        HOST="${1#*=}"
-        shift 1
-        ;;
-        -p)
-        PORT="$2"
-        if [[ $PORT == "" ]]; then break; fi
-        shift 2
-        ;;
-        --port=*)
-        PORT="${1#*=}"
-        shift 1
-        ;;
         -t)
         TIMEOUT="$2"
+        PARAMS="$PARAMS -t $2"
         if [[ $TIMEOUT == "" ]]; then break; fi
         shift 2
         ;;
         --timeout=*)
+        PARAMS="$PARAMS -t ${1#*=}"
         TIMEOUT="${1#*=}"
         shift 1
         ;;
@@ -126,34 +113,61 @@ do
     esac
 done
 
-if [[ "$HOST" == "" || "$PORT" == "" ]]; then
-    echoerr "Error: you need to provide a host and port to test."
+hLen=${#HOSTS[@]}
+
+if [[ hLen -eq 0 ]]; then
+    echoerr "Error 1: you need to provide at least one host and port to test."
     usage
+    exit
 fi
 
-TIMEOUT=${TIMEOUT:-15}
-STRICT=${STRICT:-0}
-CHILD=${CHILD:-0}
-QUIET=${QUIET:-0}
+if [[ hLen -eq 1 ]]; then
+    #just the one value: process it
+    HOST=${HOSTS[1]}
+    PORT=${PORTS[1]}
 
-if [[ $CHILD -gt 0 ]]; then
-    wait_for
-    RESULT=$?
-    exit $RESULT
-else
-    if [[ $TIMEOUT -gt 0 ]]; then
-        wait_for_wrapper
-        RESULT=$?
-    else
+    if [[ "$HOST" == "" || "$PORT" == "" ]]; then
+        echoerr "Error 2: you need to provide a host and port to test."
+        usage
+    fi
+
+    TIMEOUT=${TIMEOUT:-15}
+    STRICT=${STRICT:-0}
+    CHILD=${CHILD:-0}
+    QUIET=${QUIET:-0}
+
+    if [[ $CHILD -gt 0 ]]; then
         wait_for
         RESULT=$?
+    else
+        if [[ $TIMEOUT -gt 0 ]]; then
+            wait_for_wrapper
+            RESULT=$?
+        else
+            wait_for
+            RESULT=$?
+        fi
     fi
+else
+    #multiple values: split out to be processed
+    RESULT=0 #assume success until failure
+    for i in "${!HOSTS[@]}"; do
+        HOST=${HOSTS[$i]}
+        PORT=${PORTS[$i]}
+        $0 $HOST:$PORT $PARAMS &
+    done
+
+    for job in `jobs -p`
+    do
+        wait $job || let "RESULT=124"
+    done
 fi
 
+#finally, run (or not) the command and exit.
 if [[ $CLI != "" ]]; then
     if [[ $RESULT -ne 0 && $STRICT -eq 1 ]]; then
-        echoerr "$cmdname: strict mode, refusing to execute subprocess"
-        exit $RESULT
+        echo "$cmdname timedout/failed in strict mode, refusing to execute subprocess"
+        exit 1
     fi
     exec $CLI
 else
