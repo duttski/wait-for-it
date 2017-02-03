@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+#   Use this script to test if a given TCP host/port are available
+
+cmdname=$(basename $0)
+
+echoerr() { if [[ $QUIET -ne 1 ]]; then echo "$@" 1>&2; fi }
+
+usage()
+{
+    cat << USAGE >&2
+Usage:
+    $cmdname url [url...] [-s] [-t timeout] [-- command args]
+    -s | --strict               Only execute subcommand if the test succeeds
+    -q | --quiet                Don\'t output any status messages
+    -t TIMEOUT | --timeout=TIMEOUT
+                                Timeout in seconds, zero for no timeout
+    -- COMMAND ARGS             Execute command with args after the test finishes
+Example:
+    $cmdname http://www.google.com/ http://www.example.com:81/
+USAGE
+    exit 1
+}
+
+wait_for()
+{
+    if [[ $TIMEOUT -gt 0 ]]; then
+        echoerr "$cmdname: waiting $TIMEOUT seconds for $URL"
+    else
+        echoerr "$cmdname: waiting for $URL without a timeout"
+    fi
+    start_ts=$(date +%s)
+    while :
+    do
+        (curl $URL) >/dev/null 2>&1
+        result=$?
+        if [[ $result -eq 0 ]]; then
+            end_ts=$(date +%s)
+            echoerr "$cmdname: $URL is available after $((end_ts - start_ts)) seconds"
+            break
+        fi
+        sleep 1
+    done
+    return $result
+}
+
+wait_for_wrapper()
+{
+    # In order to support SIGINT during timeout: http://unix.stackexchange.com/a/57692
+    if [[ $QUIET -eq 1 ]]; then
+        timeout $TIMEOUT $0 $URL --quiet --child --timeout=$TIMEOUT &
+    else
+        timeout $TIMEOUT $0 $URL --child --timeout=$TIMEOUT &
+    fi
+    PID=$!
+    trap "kill -INT -$PID" INT
+    wait $PID
+    RESULT=$?
+    if [[ $RESULT -ne 0 ]]; then
+        echoerr "$cmdname: timeout occurred after waiting $TIMEOUT seconds for $URL"
+    fi
+    return $RESULT
+}
+
+declare -a URLS
+I=0
+
+# process arguments
+while [[ $# -gt 0 ]]
+do
+    case "$1" in
+        --child)
+        CHILD=1
+        shift 1
+        ;;
+        -q | --quiet)
+        QUIET=1
+        PARAMS="$PARAMS --quiet"
+        shift 1
+        ;;
+        -s | --strict)
+        STRICT=1
+        shift 1
+        ;;
+        -t)
+        TIMEOUT="$2"
+        PARAMS="$PARAMS -t $2"
+        if [[ $TIMEOUT == "" ]]; then break; fi
+        shift 2
+        ;;
+        --timeout=*)
+        PARAMS="$PARAMS -t ${1#*=}"
+        TIMEOUT="${1#*=}"
+        shift 1
+        ;;
+        --)
+        shift
+        CLI="$@"
+        break
+        ;;
+        --help)
+        usage
+        ;;
+        *)
+        I=$((I + 1))
+        URLS[I]=$1
+        shift 1
+        ;;
+    esac
+done
+
+hLen=${#URLS[@]}
+
+if [[ hLen -eq 0 ]]; then
+    echoerr "Error 1: you need to provide at least one url to test."
+    usage
+    exit
+fi
+
+if [[ hLen -eq 1 ]]; then
+    #just the one value: process it
+    URL=${URLS[1]}
+
+    if [[ "$URL" == "" ]]; then
+        echoerr "Error 2: you need to provide a url to test."
+        usage
+    fi
+
+    TIMEOUT=${TIMEOUT:-15}
+    STRICT=${STRICT:-0}
+    CHILD=${CHILD:-0}
+    QUIET=${QUIET:-0}
+
+    if [[ $CHILD -gt 0 ]]; then
+        wait_for
+        RESULT=$?
+    else
+        if [[ $TIMEOUT -gt 0 ]]; then
+            wait_for_wrapper
+            RESULT=$?
+        else
+            wait_for
+            RESULT=$?
+        fi
+    fi
+else
+    #multiple values: split out to be processed
+    RESULT=0 #assume success until failure
+    for i in "${!URLS[@]}"; do
+        URL=${URLS[$i]}
+        $0 $URL $PARAMS &
+    done
+
+    for job in `jobs -p`
+    do
+        wait $job || let "RESULT=124"
+    done
+fi
+
+#finally, run (or not) the command and exit.
+if [[ $CLI != "" ]]; then
+    if [[ $RESULT -ne 0 && $STRICT -eq 1 ]]; then
+        echo "$cmdname timedout/failed in strict mode, refusing to execute subprocess"
+        exit 1
+    fi
+    exec $CLI
+else
+    exit $RESULT
+fi
